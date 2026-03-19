@@ -4,8 +4,14 @@ import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 import chalk from 'chalk';
-import puter from '@puter/puter.js';
 import readline from 'readline';
+
+// 🔥 Node 22 WebSocket Bug Fix (এটি ইনফিনিট লুপ ক্র্যাশ বন্ধ করবে)
+import WebSocket from 'ws';
+global.WebSocket = WebSocket;
+
+// Puter.js এর Node.js Auth মডিউল ইমপোর্ট
+import { init, getAuthToken } from "@heyputer/puter.js/src/init.cjs";
 
 // টার্মিনালে ইনপুট নেওয়ার জন্য Setup
 const rl = readline.createInterface({
@@ -18,12 +24,43 @@ const currentDir = process.cwd();
 // প্রম্পট নেওয়ার ফাংশন
 const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
 
+// 🎨 Custom Spinner for Live UI (No extra dependencies needed)
+class TerminalSpinner {
+    constructor(message) {
+        this.message = message;
+        this.frames =['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+        this.interval = null;
+        this.currentFrame = 0;
+    }
+    start() {
+        this.interval = setInterval(() => {
+            process.stdout.write(`\r\x1b[K${chalk.cyan(this.frames[this.currentFrame])} ${chalk.yellow(this.message)}`);
+            this.currentFrame = (this.currentFrame + 1) % this.frames.length;
+        }, 80);
+    }
+    update(newMessage) {
+        this.message = newMessage;
+    }
+    stop(finalMessage, isSuccess = true) {
+        clearInterval(this.interval);
+        const icon = isSuccess ? chalk.green('✔') : chalk.red('✖');
+        process.stdout.write(`\r\x1b[K${icon} ${isSuccess ? chalk.green(finalMessage) : chalk.red(finalMessage)}\n`);
+    }
+}
+
+// ⌨️ Live Typing Effect Function
+const typeText = async (text, speed = 15) => {
+    for (const char of text) {
+        process.stdout.write(chalk.cyan(char));
+        await new Promise(r => setTimeout(r, speed));
+    }
+    console.log('\n');
+};
+
 async function getProjectContext() {
-    // প্রজেক্টের সব ফাইল খুঁজবে (যাতে AI বুঝতে পারে কী কী ফাইল আছে)
     const files = await glob('**/*.{js,jsx,css,html}', { ignore: 'node_modules/**' });
-    let context = `প্রজেক্ট ফোল্ডার: ${currentDir}\n\nবর্তমান ফাইলসমূহ:\n${files.join('\n')}\n\n`;
+    let context = `Project Directory: ${currentDir}\n\nCurrent Files:\n${files.join('\n')}\n\n`;
     
-    // ফাইলগুলোর ভেতরের কোড পড়ে AI কে দেওয়া হচ্ছে
     for (const file of files) {
         const fullPath = path.join(currentDir, file);
         if (fs.existsSync(fullPath)) {
@@ -35,64 +72,112 @@ async function getProjectContext() {
 }
 
 async function startInteractiveChat() {
-    console.log(chalk.blue.bold('\n🤖 Nahid AI Agent চালু হয়েছে! (Puter.js Powered)'));
-    console.log(chalk.cyan(`প্রজেক্ট ডিরেক্টরি: ${currentDir}`));
-    console.log(chalk.gray(`(চ্যাট বন্ধ করতে 'exit' বা 'quit' লিখুন)\n`));
+    console.log(chalk.blue.bold('\n=================================================='));
+    console.log(chalk.blue.bold('        🤖 Nahid AI Agent (Puter.js Powered)       '));
+    console.log(chalk.blue.bold('==================================================\n'));
 
-    // চ্যাট হিস্ট্রি সেভ রাখার জন্য অ্যারে
-    let chatHistory =[];
+    const authSpinner = new TerminalSpinner('Connecting to Puter.js server... (A browser pop-up may open)');
+    authSpinner.start();
+    
+    let puter;
+    try {
+        const authToken = await getAuthToken();
+        puter = init(authToken);
+        authSpinner.stop('Puter authentication successful!\n');
+    } catch (error) {
+        authSpinner.stop('Puter authentication failed!', false);
+        console.log(chalk.red(error.message));
+        process.exit(1);
+    }
+
+    console.log(chalk.cyan(`📂 Working Directory: ${currentDir}`));
+    console.log(chalk.gray(`💡 Tip: Type 'exit' or 'quit' to terminate the session.\n`));
+
+    let chatHistory = [];
 
     while (true) {
-        const userInput = await askQuestion(chalk.green('You: '));
+        const userInput = await askQuestion(chalk.greenBright('You ❯ '));
 
         if (userInput.trim().toLowerCase() === 'exit' || userInput.trim().toLowerCase() === 'quit') {
-            console.log(chalk.yellow('\n👋 AI Agent বন্ধ করা হলো। ধন্যবাদ!'));
+            console.log(chalk.yellow('\n👋 AI Agent shutting down. Goodbye!'));
             rl.close();
             break;
         }
 
         if (!userInput.trim()) continue;
 
-        console.log(chalk.yellow('⏳ AI প্রজেক্ট রিড করছে এবং চিন্তা করছে...'));
+        const aiSpinner = new TerminalSpinner('AI is analyzing project context and thinking...');
+        aiSpinner.start();
 
         try {
             const projectContext = await getProjectContext();
 
+            // English System Prompt with DELETE action included
             const systemPrompt = `
-            তুমি একজন এক্সপার্ট ডেভেলপার। ইউজারের প্রজেক্টের বর্তমান অবস্থা নিচে দেওয়া হলো।
-            
-            ${projectContext}
-            
-            ইউজারের নির্দেশ: "${userInput}"
-            
-            তুমি চাইলে নিচের ২টি অ্যাকশন নিতে পারো। তোমাকে অবশ্যই এই exact ফরম্যাট ব্যবহার করতে হবে:
-            
-            ১. নতুন ফাইল তৈরি করতে (CREATE):
-            [CREATE: path/to/newfile.js]
-            এখানে কোড লিখবে...[/CREATE]
-            
-            ২. পুরোনো ফাইল আপডেট করতে (UPDATE):[UPDATE: path/to/file.js]
-            <<<< SEARCH
-            পুরোনো কোড যা মুছতে হবে
-            ==== REPLACE
-            নতুন কোড যা বসাতে হবে
-            >>>>
-            [/UPDATE]
-            
-            নোট: কোনো মার্কডাউন (\`\`\`) ব্লক অ্যাকশন ট্যাগের ভেতরে ব্যবহার করবে না। শুধু সরাসরি কোড দেবে। তুমি চাইলে একসাথে নতুন ফাইল তৈরি এবং পুরোনো ফাইল আপডেট করতে পারো।
+You are an expert software developer AI assistant. Below is the current state of the user's project.
+
+${projectContext}
+
+User Request: "${userInput}"
+
+You can take the following actions to fulfill the request. You MUST use this exact formatting for actions:
+
+1. To CREATE a new file (CREATE):[CREATE: path/to/newfile.js]
+Write the complete code here...
+[/CREATE]
+
+2. To UPDATE an existing file (UPDATE):[UPDATE: path/to/file.js]
+<<<< SEARCH
+exact old code that needs to be replaced
+==== REPLACE
+new code to insert
+>>>>
+[/UPDATE]
+
+3. To DELETE an existing file (DELETE):
+[DELETE: path/to/file.js]
+
+Rules:
+- Do NOT wrap action blocks (like [CREATE], [UPDATE], [DELETE]) in markdown backticks (\`\`\`). Output them directly.
+- You can perform multiple actions (CREATE, UPDATE, DELETE) simultaneously in a single response.
+- Provide a brief summary of what you did outside the action blocks.
             `;
 
-            // Puter.js দিয়ে AI Call করা
             chatHistory.push({ role: "user", content: systemPrompt });
             
             const aiResponse = await puter.ai.chat(chatHistory, { model: 'gemini-2.5-pro' });
-            const responseText = aiResponse.message.content;
+            
+            const responseText = typeof aiResponse === 'string' 
+                ? aiResponse 
+                : (aiResponse?.message?.content || "");
+
+            if (!responseText) {
+                aiSpinner.stop('Failed to get a valid response from AI.', false);
+                continue;
+            }
             
             chatHistory.push({ role: "assistant", content: responseText });
 
-            console.log(chalk.magenta('\n✨ AI রেসপন্স পেয়েছে! কাজ করা হচ্ছে...\n'));
+            aiSpinner.update('Applying changes to your files...');
+            await new Promise(r => setTimeout(r, 800)); // Small delay for smooth UI transition
+            aiSpinner.stop('AI response processed successfully!\n');
 
-            // ১. নতুন ফাইল তৈরি করা (CREATE Logic)
+            // --- 1. PROCESS DELETE ACTIONS ---
+            const deleteRegex = /\[DELETE:\s*(.+?)\]/g;
+            let deleteMatch;
+            while ((deleteMatch = deleteRegex.exec(responseText)) !== null) {
+                const filePath = deleteMatch[1].trim();
+                const fullPath = path.join(currentDir, filePath);
+                
+                if (fs.existsSync(fullPath)) {
+                    fs.unlinkSync(fullPath);
+                    console.log(chalk.bgRed.white.bold(` DELETE `) + chalk.red(` File deleted: ${filePath}`));
+                } else {
+                    console.log(chalk.bgYellow.black.bold(` WARNING `) + chalk.yellow(` File not found to delete: ${filePath}`));
+                }
+            }
+
+            // --- 2. PROCESS CREATE ACTIONS ---
             const createRegex = /\[CREATE:\s*(.+?)\]([\s\S]*?)\[\/CREATE\]/g;
             let createMatch;
             while ((createMatch = createRegex.exec(responseText)) !== null) {
@@ -100,13 +185,12 @@ async function startInteractiveChat() {
                 const fileContent = createMatch[2].trim();
                 const fullPath = path.join(currentDir, filePath);
                 
-                // ফোল্ডার না থাকলে তৈরি করে নেবে
                 fs.mkdirSync(path.dirname(fullPath), { recursive: true });
                 fs.writeFileSync(fullPath, fileContent, 'utf-8');
-                console.log(chalk.bgGreen.black(` CREATE `) + chalk.green(` ${filePath} ফাইলটি তৈরি করা হয়েছে!`));
+                console.log(chalk.bgGreen.black.bold(` CREATE `) + chalk.green(` File created: ${filePath}`));
             }
 
-            // ২. পুরোনো কোড এডিট করা (UPDATE Logic)
+            // --- 3. PROCESS UPDATE ACTIONS ---
             const updateRegex = /\[UPDATE:\s*(.+?)\][\s\S]*?<<<< SEARCH\n([\s\S]*?)==== REPLACE\n([\s\S]*?)>>>>[\s\S]*?\[\/UPDATE\]/g;
             let updateMatch;
             while ((updateMatch = updateRegex.exec(responseText)) !== null) {
@@ -120,27 +204,30 @@ async function startInteractiveChat() {
                     if (fileContent.includes(searchBlock)) {
                         fileContent = fileContent.replace(searchBlock, replaceBlock);
                         fs.writeFileSync(fullPath, fileContent, 'utf-8');
-                        console.log(chalk.bgBlue.white(` UPDATE `) + chalk.blue(` ${filePath} ফাইলটি আপডেট করা হয়েছে!`));
+                        console.log(chalk.bgBlue.white.bold(` UPDATE `) + chalk.blue(` File updated: ${filePath}`));
                     } else {
-                        console.log(chalk.bgRed.white(` WARNING `) + chalk.red(` ${filePath} ফাইলে Search ব্লকটি মেলেনি।`));
+                        console.log(chalk.bgYellow.black.bold(` WARNING `) + chalk.yellow(` Search block didn't match in: ${filePath}`));
                     }
                 } else {
-                    console.log(chalk.red(`❌ ফাইল পাওয়া যায়নি: ${filePath}`));
+                    console.log(chalk.bgRed.white.bold(` ERROR `) + chalk.red(` File not found to update: ${filePath}`));
                 }
             }
 
-            // AI যদি সাধারণ কোনো মেসেজ দেয় (যা ফাইল এডিট বাদে)
+            // Clean action blocks from the message to show simple conversational text
             const cleanMessage = responseText
                 .replace(/\[CREATE[\s\S]*?\[\/CREATE\]/g, '')
                 .replace(/\[UPDATE[\s\S]*?\[\/UPDATE\]/g, '')
+                .replace(/\[DELETE:[\s\S]*?\]/g, '')
                 .trim();
             
             if (cleanMessage) {
-                console.log(chalk.cyan(`\n🤖 AI: ${cleanMessage}\n`));
+                console.log(chalk.magenta.bold(`\n🤖 AI Agent:`));
+                // Call live typing effect
+                await typeText(cleanMessage, 10);
             }
 
         } catch (error) {
-            console.log(chalk.red('\n❌ Error: AI এর সাথে কানেক্ট করতে সমস্যা হয়েছে!'));
+            aiSpinner.stop('Error communicating with AI!', false);
             console.log(chalk.red(error.message));
         }
     }

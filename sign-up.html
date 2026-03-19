@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - My AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #6a11cb;
+            --secondary-color: #2575fc;
+            --background-color: #f4f7fc;
+            --form-bg-color: #ffffff;
+            --text-color: #333;
+            --light-text-color: #777;
+            --border-color: #dde1e7;
+            --error-color: #e74c3c;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--background-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: var(--text-color);
+        }
+
+        .signup-wrapper {
+            display: flex;
+            width: 100%;
+            max-width: 900px;
+            background-color: var(--form-bg-color);
+            border-radius: 20px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin: 1rem;
+        }
+
+        .info-panel {
+            flex-basis: 45%;
+            background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 4rem 2.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .info-panel h1 {
+            font-weight: 700;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .info-panel p {
+            font-weight: 300;
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+
+        .form-panel {
+            flex-basis: 55%;
+            padding: 3rem 3.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .form-panel h2 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text-color);
+        }
+
+        .form-panel .subtitle {
+            color: var(--light-text-color);
+            margin-bottom: 2rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.25rem;
+            position: relative;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: var(--light-text-color);
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: 'Poppins', sans-serif;
+            color: var(--text-color);
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(106, 17, 203, 0.15);
+        }
+
+        .signup-btn {
+            width: 100%;
+            padding: 0.9rem;
+            background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            margin-top: 1rem;
+        }
+
+        .signup-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(37, 117, 252, 0.2);
+        }
+        
+        .extra-link {
+            text-align: center;
+            margin-top: 1.5rem;
+        }
+
+        .extra-link p {
+            margin: 0;
+            font-weight: 400;
+            color: var(--light-text-color);
+        }
+
+        .extra-link a {
+            color: var(--secondary-color);
+            text-decoration: none;
+            font-weight: 600;
+            transition: text-decoration 0.3s ease;
+        }
+
+        .extra-link a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .signup-wrapper {
+                flex-direction: column;
+            }
+            .info-panel {
+                display: none; /* Hide info panel on small screens for a simpler view */
+            }
+            .form-panel {
+                padding: 2.5rem;
+            }
+        }
+
+    </style>
+</head>
+<body>
+    <div class="signup-wrapper">
+        <div class="info-panel">
+            <h1>Welcome Aboard!</h1>
+            <p>Join our community to unlock amazing features and stay connected.</p>
+        </div>
+        <div class="form-panel">
+            <h2>Create Account</h2>
+            <p class="subtitle">Get started by filling out the form below.</p>
+            <form>
+                <div class="input-group">
+                    <label for="name">Full Name</label>
+                    <input type="text" id="name" name="name" required placeholder="John Doe">
+                </div>
+                <div class="input-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" name="email" required placeholder="you@example.com">
+                </div>
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="signup-btn">Sign Up</button>
+            </form>
+            <div class="extra-link">
+                <p>Already have an account? <a href="index.html">Login</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
