@@ -5,11 +5,10 @@ import path from 'path';
 import { glob } from 'glob';
 import chalk from 'chalk';
 import fetch from 'node-fetch';
-import * as p from '@clack/prompts'; // Premium UI Library
-import { marked } from 'marked';     // Markdown Parser
-import TerminalRenderer from 'marked-terminal'; // Markdown to Terminal Colors
+import * as p from '@clack/prompts';
+import { marked } from 'marked';
+import TerminalRenderer from 'marked-terminal';
 
-// টার্মিনালে মার্কডাউন (Bold, Code blocks) সুন্দর করে দেখানোর সেটিং
 marked.setOptions({
   renderer: new TerminalRenderer({
     code: chalk.yellow,
@@ -20,18 +19,143 @@ marked.setOptions({
 // ====================== CONFIG ======================
 const API_KEY = "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";
 
-// OpenRouter এর সবচেয়ে Fast এবং Smart Model গুলো দেওয়া হলো
 const MODELS = [
-  "google/gemini-2.0-flash-lite-preview-02-05:free", // Extremely Fast & Huge Context
-  "meta-llama/llama-3.3-70b-instruct:free",          // Great for coding
-  "qwen/qwen-2.5-coder-32b-instruct:free",           // Perfect for code generation
+  "google/gemini-2.0-flash-lite-preview-02-05:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen-2.5-coder-32b-instruct:free",
 ];
 
 const currentDir = process.cwd();
 
+// ====================== UI STYLES ======================
+
+const UI = {
+  // গ্র্যাডিয়েন্ট টেক্সট
+  gradient: (text) => {
+    const colors = [chalk.magenta, chalk.cyan, chalk.blue, chalk.cyan];
+    return text.split('').map((char, i) => colors[i % colors.length](char)).join('');
+  },
+
+  // বক্স ড্রয়িং
+  box: (title, content, color = 'cyan') => {
+    const colorFn = chalk[color];
+    const width = 70;
+    const border = colorFn('═'.repeat(width));
+    const titlePad = Math.floor((width - title.length - 4) / 2);
+    
+    console.log(`\n${colorFn('╔')}${border}${colorFn('╗')}`);
+    console.log(`${colorFn('║')} ${colorFn.bold(title.padStart(title.length + titlePad).padEnd(width - 2))} ${colorFn('║')}`);
+    console.log(`${colorFn('╠')}${border}${colorFn('╣')}`);
+    
+    const lines = content.split('\n');
+    lines.forEach(line => {
+      const padding = width - line.length - 2;
+      console.log(`${colorFn('║')} ${line}${' '.repeat(Math.max(0, padding))} ${colorFn('║')}`);
+    });
+    
+    console.log(`${colorFn('╚')}${border}${colorFn('╝')}\n`);
+  },
+
+  // সেপারেটর লাইন
+  separator: (color = 'magenta') => {
+    console.log(chalk[color]('─'.repeat(70)));
+  },
+
+  // স্ট্যাটাস লাইন
+  status: (icon, text, color = 'cyan') => {
+    console.log(`${chalk[color](icon)} ${chalk.white(text)}`);
+  },
+
+  // প্রগ্রেস ইন্ডিকেটর
+  progress: (current, total, label) => {
+    const width = 30;
+    const filled = Math.round((current / total) * width);
+    const empty = width - filled;
+    const bar = chalk.cyan('█'.repeat(filled)) + chalk.gray('░'.repeat(empty));
+    console.log(`${chalk.magenta(label)} [${bar}] ${current}/${total}`);
+  },
+
+  // হেডার
+  header: () => {
+    console.clear();
+    console.log(chalk.bgMagenta.black.bold('  ✨ NAHID - Next.js AI Agent  '));
+    console.log(chalk.cyan('═'.repeat(70)));
+    console.log(chalk.gray(`📂 Directory: ${currentDir}`));
+    console.log(chalk.gray(`🕐 Time: ${new Date().toLocaleTimeString()}`));
+    console.log(chalk.cyan('═'.repeat(70)));
+    console.log();
+  },
+
+  // ফাইল লিস্ট
+  fileList: (files) => {
+    console.log(chalk.magenta.bold('📋 Files to Process:'));
+    files.forEach((file, i) => {
+      console.log(chalk.cyan(`   ${i + 1}. ${chalk.yellow(file)}`));
+    });
+    console.log();
+  },
+
+  // সাকসেস মেসেজ
+  success: (message) => {
+    console.log(chalk.bgGreen.black.bold(' ✔ ') + chalk.green(` ${message}`));
+  },
+
+  // ওয়ার্নিং মেসেজ
+  warning: (message) => {
+    console.log(chalk.bgYellow.black.bold(' ⚠ ') + chalk.yellow(` ${message}`));
+  },
+
+  // এরর মেসেজ
+  error: (message) => {
+    console.log(chalk.bgRed.black.bold(' ✖ ') + chalk.red(` ${message}`));
+  },
+
+  // ইনফো মেসেজ
+  info: (message) => {
+    console.log(chalk.bgBlue.black.bold(' ℹ ') + chalk.blue(` ${message}`));
+  },
+
+  // অ্যানিমেটেড লোডার
+  spinner: async (message, duration = 1500) => {
+    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const startTime = Date.now();
+    let frameIndex = 0;
+
+    return new Promise(resolve => {
+      const interval = setInterval(() => {
+        process.stdout.write(`\r${chalk.cyan(frames[frameIndex % frames.length])} ${message}`);
+        frameIndex++;
+
+        if (Date.now() - startTime > duration) {
+          clearInterval(interval);
+          process.stdout.write('\r' + ' '.repeat(50) + '\r');
+          resolve();
+        }
+      }, 80);
+    });
+  },
+
+  // টেবিল ফরম্যাট
+  table: (data) => {
+    const colWidths = [20, 40];
+    console.log(chalk.cyan('┌' + '─'.repeat(colWidths[0]) + '┬' + '─'.repeat(colWidths[1]) + '┐'));
+    
+    data.forEach((row, idx) => {
+      const col1 = row[0].padEnd(colWidths[0]);
+      const col2 = row[1].padEnd(colWidths[1]);
+      console.log(chalk.cyan(`│${col1}│${col2}│`));
+      
+      if (idx < data.length - 1) {
+        console.log(chalk.cyan('├' + '─'.repeat(colWidths[0]) + '┼' + '─'.repeat(colWidths[1]) + '┤'));
+      }
+    });
+    
+    console.log(chalk.cyan('└' + '─'.repeat(colWidths[0]) + '┴' + '─'.repeat(colWidths[1]) + '┘'));
+  }
+};
+
 // ====================== HELPER FUNCTIONS ======================
 
-// প্রজেক্টের শুধু ফাইল স্ট্রাকচার নিবে (যাতে AI বুঝতে পারে কি কি ফাইল আছে)
 async function getProjectTree() {
   const files = await glob('**/*.{js,jsx,ts,tsx,css,scss,json}', { 
     ignore: ['node_modules/**', '.next/**', 'dist/**', 'build/**', '.git/**'] 
@@ -39,7 +163,6 @@ async function getProjectTree() {
   return files.join('\n');
 }
 
-// AI কে কল করার গ্লোবাল ফাংশন
 async function fetchAI(systemPrompt, userMessages) {
   for (const model of MODELS) {
     try {
@@ -66,37 +189,43 @@ async function fetchAI(systemPrompt, userMessages) {
 }
 
 // ====================== MAIN CLI ======================
+
 async function startAIAssistant() {
-  console.clear();
-  
-  // সুন্দর Intro
-  p.intro(chalk.bgCyan.black.bold(' 🚀 Nahid Next.js AI Agent '));
-  p.note(`📂 Directory: ${currentDir}\n💡 Type "exit" to stop.`, 'Environment Info');
+  UI.header();
 
   let chatHistory = [];
   const projectTree = await getProjectTree();
 
+  UI.box('🚀 Welcome to Nahid AI Agent', 
+    `This AI assistant will help you:\n` +
+    `• Generate and modify code\n` +
+    `• Create new components\n` +
+    `• Update existing files\n` +
+    `• Manage your project structure\n\n` +
+    `Type "exit" to quit.`, 'magenta');
+
   while (true) {
-    // প্রফেশনাল ইনপুট প্রম্পট
     const userInput = await p.text({
-      message: chalk.greenBright('What do you want to build or change?'),
-      placeholder: 'e.g., Update the Header component to make it responsive...',
+      message: chalk.greenBright('💬 What do you want to build?'),
+      placeholder: 'e.g., Create a responsive Header component...',
     });
 
     if (p.isCancel(userInput) || ['exit', 'quit', 'q'].includes(userInput.trim().toLowerCase())) {
-      p.outro(chalk.yellow('👋 Goodbye! AI Agent terminated.'));
+      UI.separator('magenta');
+      console.log(chalk.yellow.bold('👋 Thank you for using Nahid AI Agent!'));
+      UI.separator('magenta');
       process.exit(0);
     }
 
     if (!userInput.trim()) continue;
+
     chatHistory.push({ role: "user", content: userInput });
 
-    const s = p.spinner();
-
     try {
-      // === STEP 1: Identify which files to read ===
-      s.start('🤔 Thinking about which files to read...');
-      
+      // === STEP 1: Analyze ===
+      await UI.spinner(chalk.cyan('🤔 Analyzing your request...'), 1200);
+      UI.status('✓', 'Request analyzed successfully', 'green');
+
       const plannerPrompt = `You are a project analyzer. Look at the user's request and the project file tree.
 Project Tree:
 ${projectTree}
@@ -108,13 +237,12 @@ Example: src/components/Header.jsx, src/app/page.js`;
       const planResponse = await fetchAI(plannerPrompt, [{ role: "user", content: userInput }]);
       let filesToRead = planResponse.text.split(',').map(f => f.trim()).filter(f => f && f !== 'NONE' && !f.includes('```'));
 
-      // === STEP 2: Read the files visually ===
-      let fileContext = "";
+      // === STEP 2: Read Files ===
       if (filesToRead.length > 0) {
-        s.message(chalk.cyan(`📖 I will read:\n  - ${filesToRead.join('\n  - ')}`));
+        await UI.spinner(chalk.cyan(`📖 Reading ${filesToRead.length} file(s)...`), 1500);
+        UI.fileList(filesToRead);
         
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Just for visual UI feel
-
+        let fileContext = "";
         for (const file of filesToRead) {
           const fullPath = path.join(currentDir, file);
           if (fs.existsSync(fullPath)) {
@@ -122,15 +250,14 @@ Example: src/components/Header.jsx, src/app/page.js`;
             fileContext += `\n--- File: ${file} ---\n${content}\n`;
           }
         }
-        s.message(chalk.green(`✔ Read successful (${filesToRead.length} files)`));
+        UI.success(`Read ${filesToRead.length} file(s)`);
       } else {
-        s.message(chalk.blue(`✔ No existing files needed to read.`));
+        await UI.spinner(chalk.cyan('📖 No existing files needed...'), 800);
+        UI.info('Creating new files from scratch');
       }
 
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
       // === STEP 3: Generate Code ===
-      s.start('⚡ Generating code and applying changes...');
+      await UI.spinner(chalk.cyan('⚡ Generating code...'), 2000);
 
       const coderPrompt = `You are an expert full-stack Next.js developer.
 Rules:
@@ -154,9 +281,11 @@ ${fileContext}`;
       const aiResponse = await fetchAI(coderPrompt, chatHistory);
       const aiResponseText = aiResponse.text;
       
-      s.stop(chalk.green(`✔ Task completed using ${aiResponse.model}`));
+      UI.success(`Code generated using ${chalk.yellow(aiResponse.model)}`);
 
-      // === STEP 4: Process Actions (CREATE / UPDATE / DELETE) ===
+      // === STEP 4: Process Actions ===
+      await UI.spinner(chalk.cyan('💾 Applying changes...'), 1500);
+
       let actionsTaken = [];
 
       // DELETE
@@ -167,7 +296,7 @@ ${fileContext}`;
         const fullPath = path.join(currentDir, filePath);
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
-          actionsTaken.push(chalk.red(`🗑️ Deleted: ${filePath}`));
+          actionsTaken.push(['🗑️ DELETE', filePath]);
         }
       }
 
@@ -179,7 +308,7 @@ ${fileContext}`;
         const fullPath = path.join(currentDir, filePath);
         fs.mkdirSync(path.dirname(fullPath), { recursive: true });
         fs.writeFileSync(fullPath, content, 'utf-8');
-        actionsTaken.push(chalk.green(`✨ Created: ${filePath}`));
+        actionsTaken.push(['✨ CREATE', filePath]);
       }
 
       // UPDATE
@@ -195,21 +324,23 @@ ${fileContext}`;
           if (content.includes(search)) {
             content = content.replace(search, replace);
             fs.writeFileSync(fullPath, content, 'utf-8');
-            actionsTaken.push(chalk.blue(`📝 Updated: ${filePath}`));
+            actionsTaken.push(['📝 UPDATE', filePath]);
           } else {
-            actionsTaken.push(chalk.yellow(`⚠️ Failed to update ${filePath} (Search text not found)`));
+            actionsTaken.push(['⚠️ FAILED', filePath]);
           }
         }
       }
 
       // === STEP 5: Show Summary ===
       if (actionsTaken.length > 0) {
-        p.note(actionsTaken.join('\n'), '📦 File Update Summary');
+        UI.separator('cyan');
+        console.log(chalk.magenta.bold('📦 File Changes Summary:'));
+        UI.table(actionsTaken);
       } else {
-        p.note(chalk.gray('No files were changed.'), '📦 File Update Summary');
+        UI.info('No files were changed');
       }
 
-      // Clean the response from action blocks to show only conversational text
+      // === STEP 6: Show AI Response ===
       const cleanResponse = aiResponseText
         .replace(/\[CREATE[\s\S]*?\/CREATE\]/gi, '')
         .replace(/\[UPDATE[\s\S]*?>>>>/gi, '')
@@ -217,15 +348,16 @@ ${fileContext}`;
         .trim();
 
       if (cleanResponse) {
-        console.log(chalk.cyan.bold('\n🤖 AI Agent Message:'));
-        console.log(marked(cleanResponse)); 
+        UI.separator('cyan');
+        console.log(chalk.cyan.bold('🤖 AI Agent Response:\n'));
+        console.log(marked(cleanResponse));
       }
 
       chatHistory.push({ role: "assistant", content: aiResponseText });
+      UI.separator('cyan');
 
     } catch (error) {
-      if (s) s.stop(chalk.red('✖ Operation Failed!'));
-      p.log.error(error.message);
+      UI.error(error.message);
     }
   }
 }
