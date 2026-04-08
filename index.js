@@ -20,74 +20,121 @@ marked.setOptions({
 // ====================== CONFIG ======================
 const API_KEY = "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";
 
+// OpenRouter এর সবচেয়ে Fast এবং Smart Model গুলো দেওয়া হলো
 const MODELS = [
-  "qwen/qwen3.6-plus:free",
-  "qwen/qwen3-coder:free",
-  "mistral/devstral-2:free",
-  "stepfun/step-3.5-flash:free",
-  "nvidia/nemotron-3-super-120b-a12b:free"
+  "google/gemini-2.0-flash-lite-preview-02-05:free", // Extremely Fast & Huge Context
+  "meta-llama/llama-3.3-70b-instruct:free",          // Great for coding
+  "qwen/qwen-2.5-coder-32b-instruct:free",           // Perfect for code generation
 ];
 
 const currentDir = process.cwd();
 
-// ====================== PROJECT CONTEXT ======================
-async function getProjectContext() {
-  try {
-    const files = await glob('**/*.{js,jsx,ts,tsx,css,scss,tailwind.config*,next.config*,package.json}', { 
-      ignore: ['node_modules/**', '.next/**', 'dist/**', 'build/**'] 
-    });
+// ====================== HELPER FUNCTIONS ======================
 
-    let context = `Project Root: ${currentDir}\nTotal relevant files: ${files.length}\n\n`;
-
-    for (const file of files.slice(0, 25)) { 
-      const fullPath = path.join(currentDir, file);
-      if (fs.existsSync(fullPath) && fs.statSync(fullPath).size < 100 * 1024) { 
-        const content = fs.readFileSync(fullPath, 'utf-8');
-        context += `\n--- File: ${file} ---\n${content}\n`;
-      }
-    }
-    return context;
-  } catch (e) {
-    return `Project Directory: ${currentDir}\n(Unable to read full context)`;
-  }
+// প্রজেক্টের শুধু ফাইল স্ট্রাকচার নিবে (যাতে AI বুঝতে পারে কি কি ফাইল আছে)
+async function getProjectTree() {
+  const files = await glob('**/*.{js,jsx,ts,tsx,css,scss,json}', { 
+    ignore: ['node_modules/**', '.next/**', 'dist/**', 'build/**', '.git/**'] 
+  });
+  return files.join('\n');
 }
 
-// ====================== MAIN CHAT ======================
+// AI কে কল করার গ্লোবাল ফাংশন
+async function fetchAI(systemPrompt, userMessages) {
+  for (const model of MODELS) {
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: "system", content: systemPrompt }, ...userMessages],
+          temperature: 0.3,
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.choices?.[0]?.message?.content) {
+        return { text: data.choices[0].message.content, model: model.split('/').pop() };
+      }
+    } catch (e) { continue; }
+  }
+  throw new Error("All models failed.");
+}
+
+// ====================== MAIN CLI ======================
 async function startAIAssistant() {
   console.clear();
   
-  // সুন্দর Intro (Gemini CLI স্টাইল)
-  p.intro(chalk.bgBlue.white.bold(' 🚀 Nahid Next.js AI Agent '));
-  p.note(`📂 Working Directory: ${currentDir}\n💡 Type "exit" or "quit" to stop.`, 'Environment Info');
+  // সুন্দর Intro
+  p.intro(chalk.bgCyan.black.bold(' 🚀 Nahid Next.js AI Agent '));
+  p.note(`📂 Directory: ${currentDir}\n💡 Type "exit" to stop.`, 'Environment Info');
 
   let chatHistory = [];
+  const projectTree = await getProjectTree();
 
   while (true) {
     // প্রফেশনাল ইনপুট প্রম্পট
     const userInput = await p.text({
-      message: chalk.greenBright('You:'),
-      placeholder: 'What do you want to build or change?',
+      message: chalk.greenBright('What do you want to build or change?'),
+      placeholder: 'e.g., Update the Header component to make it responsive...',
     });
 
-    // Handle Exit (Ctrl+C or typed exit)
     if (p.isCancel(userInput) || ['exit', 'quit', 'q'].includes(userInput.trim().toLowerCase())) {
       p.outro(chalk.yellow('👋 Goodbye! AI Agent terminated.'));
       process.exit(0);
     }
 
     if (!userInput.trim()) continue;
+    chatHistory.push({ role: "user", content: userInput });
 
-    // Clack এর বিল্ট-ইন প্রফেশনাল স্পিনার
     const s = p.spinner();
-    s.start('AI is analyzing your project...');
 
     try {
-      const projectContext = await getProjectContext();
+      // === STEP 1: Identify which files to read ===
+      s.start('🤔 Thinking about which files to read...');
+      
+      const plannerPrompt = `You are a project analyzer. Look at the user's request and the project file tree.
+Project Tree:
+${projectTree}
 
-      const systemPrompt = `You are an expert full-stack Next.js (App Router) developer...
-(আপনার আগের রুলসগুলো এখানে থাকবে)
+Based on the request, which files do you need to read the content of? 
+Return ONLY a comma-separated list of file paths. If none, return "NONE".
+Example: src/components/Header.jsx, src/app/page.js`;
+
+      const planResponse = await fetchAI(plannerPrompt, [{ role: "user", content: userInput }]);
+      let filesToRead = planResponse.text.split(',').map(f => f.trim()).filter(f => f && f !== 'NONE' && !f.includes('```'));
+
+      // === STEP 2: Read the files visually ===
+      let fileContext = "";
+      if (filesToRead.length > 0) {
+        s.message(chalk.cyan(`📖 I will read:\n  - ${filesToRead.join('\n  - ')}`));
+        
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Just for visual UI feel
+
+        for (const file of filesToRead) {
+          const fullPath = path.join(currentDir, file);
+          if (fs.existsSync(fullPath)) {
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            fileContext += `\n--- File: ${file} ---\n${content}\n`;
+          }
+        }
+        s.message(chalk.green(`✔ Read successful (${filesToRead.length} files)`));
+      } else {
+        s.message(chalk.blue(`✔ No existing files needed to read.`));
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // === STEP 3: Generate Code ===
+      s.start('⚡ Generating code and applying changes...');
+
+      const coderPrompt = `You are an expert full-stack Next.js developer.
 Rules:
-- Handle BOTH beautiful UI changes and complex functionality/logic.
+- Handle BOTH beautiful UI changes and complex logic.
 - Use this exact format for actions:
 [CREATE: path/to/file.tsx]
 code
@@ -100,52 +147,16 @@ new code
 >>>>
 [/UPDATE]
 [DELETE: path/to/file.js]
-Project Context:\n${projectContext}`;
 
-      let aiResponseText = "";
-      let usedModel = "";
+Here are the contents of the relevant files:
+${fileContext}`;
 
-      for (const model of MODELS) {
-        try {
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${API_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: model,
-              messages: [
-                { role: "system", content: systemPrompt },
-                ...chatHistory,
-                { role: "user", content: userInput }
-              ],
-              temperature: 0.7,
-            })
-          });
-
-          const data = await response.json();
-
-          if (response.ok && data.choices?.[0]?.message?.content) {
-            aiResponseText = data.choices[0].message.content;
-            usedModel = model.split('/').pop();
-            break;
-          }
-        } catch (e) { continue; }
-      }
-
-      if (!aiResponseText) {
-        s.stop(chalk.red('✖ All models failed. Please try again.'));
-        continue;
-      }
-
-      s.stop(chalk.green(`✔ Response received from ${usedModel}`));
-
-      chatHistory.push({ role: "user", content: userInput });
-      chatHistory.push({ role: "assistant", content: aiResponseText });
-
-      // === Process Actions (CREATE / UPDATE / DELETE) ===
+      const aiResponse = await fetchAI(coderPrompt, chatHistory);
+      const aiResponseText = aiResponse.text;
       
+      s.stop(chalk.green(`✔ Task completed using ${aiResponse.model}`));
+
+      // === STEP 4: Process Actions (CREATE / UPDATE / DELETE) ===
       let actionsTaken = [];
 
       // DELETE
@@ -185,30 +196,35 @@ Project Context:\n${projectContext}`;
             content = content.replace(search, replace);
             fs.writeFileSync(fullPath, content, 'utf-8');
             actionsTaken.push(chalk.blue(`📝 Updated: ${filePath}`));
+          } else {
+            actionsTaken.push(chalk.yellow(`⚠️ Failed to update ${filePath} (Search text not found)`));
           }
         }
       }
 
-      // Show Action Summaries inside a nice CLI box
+      // === STEP 5: Show Summary ===
       if (actionsTaken.length > 0) {
-        p.note(actionsTaken.join('\n'), 'File Changes');
+        p.note(actionsTaken.join('\n'), '📦 File Update Summary');
+      } else {
+        p.note(chalk.gray('No files were changed.'), '📦 File Update Summary');
       }
 
-      // Clean the response
+      // Clean the response from action blocks to show only conversational text
       const cleanResponse = aiResponseText
         .replace(/\[CREATE[\s\S]*?\/CREATE\]/gi, '')
         .replace(/\[UPDATE[\s\S]*?>>>>/gi, '')
         .replace(/\[DELETE:[\s\S]*?\]/gi, '')
         .trim();
 
-      // Print Markdown beautifully in terminal
       if (cleanResponse) {
-        console.log(chalk.cyan.bold('\n🤖 AI Agent:'));
-        console.log(marked(cleanResponse)); // Markdown rendering
+        console.log(chalk.cyan.bold('\n🤖 AI Agent Message:'));
+        console.log(marked(cleanResponse)); 
       }
 
+      chatHistory.push({ role: "assistant", content: aiResponseText });
+
     } catch (error) {
-      s.stop(chalk.red('Something went wrong!'));
+      if (s) s.stop(chalk.red('✖ Operation Failed!'));
       p.log.error(error.message);
     }
   }
