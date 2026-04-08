@@ -20,9 +20,7 @@ marked.setOptions({
 const API_KEY = "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";
 
 const MODELS = [
-  "google/gemini-2.0-flash-lite-preview-02-05:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen-2.5-coder-32b-instruct:free",
+  "openrouter/free",
 ];
 
 const currentDir = process.cwd();
